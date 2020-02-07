@@ -1,0 +1,128 @@
+#!/bin/bash
+echo "$0" : 'mata el PID (padre) y todos los descendientes, hijos, nietos, etc.'
+echo 'todo lo que esté abajo del padre en -esa- "rama" del pstree'
+echo
+
+
+### TO-DO
+
+# "-demo"
+# que liste procesos pero que no mate nada, que solo muestre que haria
+# queda un poco al revés jaja, rompe todo default, y con 1 opcion no haría nada
+
+
+# matar primero descendientes hasta el padre o al revés ???
+# 1 padre > 2 hijo > 3 nieto
+# o 3 > 2 > 1   ???
+
+# puede servir para algo util éste ps --forest casero ?
+# https://superuser.com/questions/363169/ps-how-can-i-recursively-get-all-child-process-for-a-given-pid/822450#822450
+# ps --forest $(ps -e --no-header -o pid,ppid|awk -vp=<PID> 'function r(s){print s;s=a[s];while(s){sub(",","",s);t=s;sub(",.*","",t);sub("[0-9]+","",s);r(t)}}{a[$2]=a[$2]","$1}END{r(p)}')
+
+###
+
+
+#que "ps" usar ?
+# ps auxwwe
+# ps uwwe -p X
+# ps eww -el
+ps2='ps -ww -o uname,pid,ppid,etime,%cpu,%mem,tname,stat,start,time,args -p '
+
+
+#salir si no dan parametros
+if [ "$1" == "" ]; then
+  echo -e '\nerror: ingresar PID' ; exit 1
+fi
+
+padre="$1"
+
+#es un numero > 1 el PID?
+if [ "$padre" -le "1" ]; then
+  echo 'error: ingresar PID mayor que 1' ; exit 1
+fi
+
+#existe el PID en ejecucion?
+if ! ps -o pid -p "$padre" | grep "$padre" >/dev/null ; then
+  echo 'error: no existe el proceso PID con ese número' ; exit 1
+fi
+
+#calcular padre + toda la descendencia
+lista="$(pstree -pal "$padre" | grep -o '\,[0-9]\+' | grep -o '[0-9]\+')"
+
+#transformar lista a horizontal
+lista=`echo $lista`
+
+#debug
+#echo -e "PIDs:\n${lista}"
+
+#echo -e " kill -15 PIDs:\n${lista}"
+echo " kill -15 PIDs:"
+
+# mostrar ps con los PIDs
+#ps -Fl -p 1 | head -1
+$ps2 1 | head -1
+
+for pid in $lista ; do
+  ps=`$ps2 $pid`
+  wc=`echo "$ps" | wc -l`
+  if [ "$wc" -eq 2 ]; then
+    echo "$ps" | tail -1
+  fi
+done
+
+# comentado, cambio todo
+<< '////'
+lo cambio
+
+ps -Fl -p 1 | head -1
+for pid in $lista ; do
+  
+  # si el pid no existe muestra el header, grrr!
+  # ps -Fl -p $pid | tail -1
+  
+  if [ -d /proc/${pid} ] ; then
+    ps -Fl -p ${pid}
+  fi
+  
+  kill -15 "$pid"
+done
+////
+
+# matate solo guacho
+for pid in $lista ; do
+  ps=`$ps2 $pid`
+  wc=$(echo "$ps" | wc -l)
+  if [ "$wc" -eq 2 ]; then
+    kill -15 $pid
+  fi
+done
+echo
+
+echo 3...
+sleep 1
+echo 2..
+sleep 1
+echo 1
+sleep 1
+echo
+
+# de nuevo
+# 1) lista
+# 2) kill ahora -9
+echo " kill -9 PIDs"
+$ps2 1 | head -1
+for pid in $lista ; do
+  ps=`$ps2 $pid`
+  wc=`echo "$ps" | wc -l`
+  if [ "$wc" -eq 2 ]; then
+    echo "$ps" | tail -1
+  fi
+done
+
+for pid in $lista ; do
+  ps=`$ps2 $pid`
+  wc=`echo "$ps" | wc -l`
+  if [ "$wc" -eq 2 ]; then
+    kill -9 $pid
+  fi
+done
