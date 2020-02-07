@@ -1,13 +1,11 @@
 #!/bin/bash
-echo "$0" : 'mata el PID (padre) y todos los descendientes, hijos, nietos, etc.'
-echo 'todo lo que esté abajo del padre en -esa- "rama" del pstree'
-echo
-
+printf '%s %s\n' "$0" ': mata el PID especificado (padre) y todos sus descendientes, hijos, nietos, etc.'
+printf 'todo lo que esté abajo del padre en -esa- "rama" del pstree v0.2\n\n'
 
 ### TO-DO
 
 # "-demo"
-# que liste procesos pero que no mate nada, que solo muestre que haria
+# que liste procesos pero que no mate nada, que solo muestre que haría
 # queda un poco al revés jaja, rompe todo default, y con 1 opcion no haría nada
 
 
@@ -15,11 +13,7 @@ echo
 # 1 padre > 2 hijo > 3 nieto
 # o 3 > 2 > 1   ???
 
-# puede servir para algo util éste ps --forest casero ?
-# https://superuser.com/questions/363169/ps-how-can-i-recursively-get-all-child-process-for-a-given-pid/822450#822450
-# ps --forest $(ps -e --no-header -o pid,ppid|awk -vp=<PID> 'function r(s){print s;s=a[s];while(s){sub(",","",s);t=s;sub(",.*","",t);sub("[0-9]+","",s);r(t)}}{a[$2]=a[$2]","$1}END{r(p)}')
-
-###
+### TO-DO
 
 
 #que "ps" usar ?
@@ -28,77 +22,103 @@ echo
 # ps eww -el
 ps2='ps -ww -o uname,pid,ppid,etime,%cpu,%mem,tname,stat,start,time,args -p '
 
+# si "DEMO == 1" corre simulacion
+DEMO=0
 
 #salir si no dan parametros
-if [ "$1" == "" ]; then
-  echo -e '\nerror: ingresar PID' ; exit 1
+if [ $# -eq 0 ]; then
+  # printf 'error: ingresar parametros\n' 
+  printf "uso: [-d|--demo] [PID]...\n"
+  printf "$0 -d 2 3 123\n"
+  exit 1
 fi
 
-padre="$1"
+LISTA=() # inicializa array vacío ???
+while [ $# -gt 0 ]
+do
+parametro="$1"
 
-#es un numero > 1 el PID?
-if [ "$padre" -le "1" ]; then
-  echo 'error: ingresar PID mayor que 1' ; exit 1
+case $parametro in
+  -d|--demo)
+  DEMO=1
+  shift # pasar al siguiente parametro
+  ;;
+  
+  *)
+  # es un numero > 1 el PID?
+  if [ "$1" -le "1" ]; then
+    echo 'error: ingresar PID mayor que 1' ; exit 1
+  fi
+  
+  # que sea un numero
+  case $1 in
+    ''|*[!0-9]*) 
+      printf "error: ingresar numero de PID"
+      exit 1
+    ;;
+  esac
+  
+  LISTA+=("$1")  # guardar PID en array
+  shift
+  ;;
+esac
+done
+
+
+#array de todos los PIDs a matar QUE EXISTAN!
+LISTA2=()
+
+for padre in "${LISTA[@]}";
+do
+  #existe el PID en ejecucion?
+  if ! ps -o pid -p "$padre" | tail -1 | grep "$padre" >/dev/null ; then
+    printf "error, no existe PID : ${padre}\n"
+    # exit 1
+  else
+    pstree01="`pstree -pal -U $padre`"
+    printf '%s\n\n' "$pstree01"
+  fi
+
+  #calcular padre + toda la descendencia
+  lista="`pstree -pa  | grep -o '[0-9]\+'`"
+  for i in `pstree -pa ${padre} | grep -o '[0-9]\+'`
+  do 
+    LISTA2+=("$i")
+  done
+done
+
+
+if [[ ${#LISTA2[@]} -eq 0 ]]; then
+  printf 'no existen PIDs a matar\n'
+  exit 1
 fi
 
-#existe el PID en ejecucion?
-if ! ps -o pid -p "$padre" | grep "$padre" >/dev/null ; then
-  echo 'error: no existe el proceso PID con ese número' ; exit 1
-fi
-
-#calcular padre + toda la descendencia
-lista="$(pstree -pal "$padre" | grep -o '\,[0-9]\+' | grep -o '[0-9]\+')"
-
-#transformar lista a horizontal
-lista=`echo $lista`
-
-#debug
-#echo -e "PIDs:\n${lista}"
-
-#echo -e " kill -15 PIDs:\n${lista}"
-echo " kill -15 PIDs:"
+printf " kill -15 PIDs:\n"
 
 # mostrar ps con los PIDs
-#ps -Fl -p 1 | head -1
 $ps2 1 | head -1
 
-for pid in $lista ; do
-  ps=`$ps2 $pid`
-  wc=`echo "$ps" | wc -l`
-  if [ "$wc" -eq 2 ]; then
-    echo "$ps" | tail -1
-  fi
-done
-
-# comentado, cambio todo
-<< '////'
-lo cambio
-
-ps -Fl -p 1 | head -1
-for pid in $lista ; do
-  
-  # si el pid no existe muestra el header, grrr!
-  # ps -Fl -p $pid | tail -1
-  
-  if [ -d /proc/${pid} ] ; then
-    ps -Fl -p ${pid}
-  fi
-  
-  kill -15 "$pid"
-done
-////
-
 # matate solo guacho
-for pid in $lista ; do
-  ps=`$ps2 $pid`
-  wc=$(echo "$ps" | wc -l)
-  if [ "$wc" -eq 2 ]; then
-    kill -15 $pid
+for pid in "${LISTA2[@]}"
+do
+  psout="$($ps2 $pid)"
+  if [ $(echo "$psout" | wc -l) -eq 2 ]; then
+    echo "$psout" | tail -1
+    if [ $DEMO -eq 0 ]; then
+      kill -15 $pid
+    fi
   fi
 done
-echo
 
-echo 3...
+#no hacemos esperar si no hace falta
+count1=`ps -o pid "${LISTA2[@]}" | wc -l`
+if [[ $count1 -eq 1 ]]; then
+  printf " se finalizaron (terminate) todos los PIDs\n"
+  exit 0
+fi
+
+printf "\n"
+printf "3...\n"
 sleep 1
 echo 2..
 sleep 1
@@ -106,23 +126,28 @@ echo 1
 sleep 1
 echo
 
-# de nuevo
-# 1) lista
-# 2) kill ahora -9
-echo " kill -9 PIDs"
+# de nuevo, ahora -9
+echo " kill -9 PIDs:"
 $ps2 1 | head -1
-for pid in $lista ; do
-  ps=`$ps2 $pid`
-  wc=`echo "$ps" | wc -l`
-  if [ "$wc" -eq 2 ]; then
-    echo "$ps" | tail -1
+for pid in "${LISTA2[@]}"
+do
+  psout=`$ps2 $pid`
+  if [ $(echo "$psout" | wc -l) -eq 2 ]; then
+    echo "$psout" | tail -1
+    if [ $DEMO -eq 0 ]; then
+      kill -9 $pid
+    fi
   fi
 done
+echo
 
-for pid in $lista ; do
-  ps=`$ps2 $pid`
-  wc=`echo "$ps" | wc -l`
-  if [ "$wc" -eq 2 ]; then
-    kill -9 $pid
+
+echo " ¿Quedó algun PID vivo?:"
+$ps2 1 | head -1
+for pid in "${LISTA2[@]}" 
+do
+  psout="`$ps2 $pid`"
+  if [ $(echo "$psout" | wc -l) -eq 2 ]; then
+    echo "$psout" | tail -1
   fi
 done
